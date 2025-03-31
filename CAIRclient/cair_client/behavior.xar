@@ -58,18 +58,19 @@ from cair_libraries.client_softbank_personalization_server import Personalizatio
 from requests.exceptions import ConnectionError
 from dotenv import load_dotenv
 
-server_port = "12346"
+server_port = "12349"
 img_port = "12348"
 
-dense_cap = False
-log_data = False
+experiment_id = ""
+vision_grounding = False
+log_data = True
 interventions = False
 resume_conversation_state = False
 formal_language = False
 
 lab_server = "130.251.2.192"
 local_server = "10.186.13.11"
-microphone_ip = "192.168.1.22"
+microphone_ip = "192.168.1.24"
 
 # Set the location of the server
 server_ip = lab_server
@@ -89,11 +90,11 @@ MAX_HISTORY_TURNS = 10
 SILENCE_THRESHOLD = 300
 
 BASE_CAIR_hub = "https://" + server_ip + ":" + server_port + "/CAIR_hub"
-img_url = "http://" + server_ip + ":" + img_port + "/CAIR_dense_captioning"
+img_url = "http://" + server_ip + ":" + img_port + "/CAIR_vision_grounding"
 
-# If dense captioning is set to false the dense_cap_result will be sent empty to the server and the
+# If dense captioning is set to false the visual_information will be sent empty to the server and the
 # visual information will not be used by gpt-4
-dense_cap_result = []
+visual_information = ""
 default_profile_id = "00000000-0000-0000-0000-000000000000"
 
 # Load environment variables from .env file
@@ -147,7 +148,7 @@ class MyClass(GeneratedClass):
 
         self.configuration = {"bodyLanguageMode": "contextual"}
         self.isAlive = True
-        self.exit_keywords = ["stop talking", "esci dallapp", "esci dallapplicazione", "quit the application"]
+        self.exit_keywords = ["stop talking", "esci dallapp", "esci dalla conversazione", "quit the application"]
         self.repeat_keywords = ["repeat", "can you repeat", "say it again", "puoi ripetere", "ripeti", "non ho capito"]
         self.dialogue_state_file_path = "/data/home/nao/.local/share/PackageManager/apps/" + app_name + "/dialogue_state.json"
         self.speakers_info_file_path = "/data/home/nao/.local/share/PackageManager/apps/" + app_name + "/speakers_info.json"
@@ -211,8 +212,8 @@ class MyClass(GeneratedClass):
                 self.sentences[lan] = [line.rstrip() for line in f]
         self.language_dict = {"it-IT": "Italian", "en-US": "English", "fr-FR": "French", "es-ES": "Spanish"}
 
-        self.dense_cap = dense_cap
-        self.dense_cap_result = dense_cap_result
+        self.vision_grounding = vision_grounding
+        self.visual_information = visual_information
         self.microphone_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.log_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.log_data = log_data
@@ -254,7 +255,7 @@ class MyClass(GeneratedClass):
     def check_socket_connection(self, received_string):
         if received_string == "":
             if language == "it-IT":
-                to_say = "Mi dispiace, c'è stato qualche problema con la connessione al microfono esterno. Prova a fare quello che farebbe un esperto informatico. Riavvia il microfono, aspetta qualche minuto e poi riavvia anche la mia applicazione per cercare di risolvere il problema!"
+                to_say = "Mi dispiace, c'è stato qualche problema con la connessione al microfono esterno.  Riavvia il microfono, aspetta qualche minuto e poi riavvia anche la mia applicazione per cercare di risolvere il problema!"
             else:
                 to_say = "I'm sorry, there was a problem with the connection to the external microphone."
             self.animated_speech.say(self.voice_speed + to_say, self.configuration)
@@ -282,7 +283,7 @@ class MyClass(GeneratedClass):
                 # Log the time needed to perform the request and get the response
                 request_start_time = time.time()
                 response = requests.post(img_url, data=json_data, headers={"Content-Type":"application/json"})
-                self.dense_cap_result = response.json()["result"]
+                self.visual_information = response.json()["result"]
                 request_end_time = time.time()
                 to_log = "v#timestamp:" + date_time_str + "\n" \
                          "v#image_capture_time:" + str(image_capture_end_time - image_capture_start_time) + "\n" \
@@ -317,7 +318,7 @@ class MyClass(GeneratedClass):
                 self.log_socket.connect((audio_recorder_ip, 9092))
         except Exception as e:
             if language == "it-IT":
-                to_say = "Mi dispiace, non riesco a connettermi al microfono esterno. Come farebbe un buon informatico, controlla che sia acceso, o prova a farlo ripartire, e poi riavvia la mia applicazione. Se il problema persiste, contatta i miei sviluppatori."
+                to_say = "Mi dispiace, non riesco a connettermi al microfono esterno.  Prova a farlo ripartire, e poi riavvia la mia applicazione. Se il problema persiste, contatta i miei sviluppatori."
             else:
                 to_say = "I'm sorry, I can't connect to the microphone or the log service"
             self.logger.info(str(to_say))
@@ -461,7 +462,7 @@ class MyClass(GeneratedClass):
         self.motion.wakeUp()
 
         # If dense captioning should be used, start the thread to update visual information
-        if self.dense_cap:
+        if self.vision_grounding:
             t1 = threading.Thread(None, self.acquire_image)
             t1.start()
 
@@ -621,16 +622,17 @@ class MyClass(GeneratedClass):
                                                           "age": self.speakers_info[speaker_id]["age"]}
 
                 # Compose the payload of the message to be sent to the server
-                data = {"req_type": "reply",
-                        "openai_api_key": openai_api_key,
-                        "client_sentence": xml_string,
-                        "language": language,
-                        "due_intervention": self.due_intervention,
-                        "dialogue_state": self.dialogue_state.to_dict(),
-                        "dialogue_statistics": self.dialogue_statistics.to_dict(),
-                        "speakers_info": speakers_info_no_names,
-                        "prev_speaker_info": {"id": prev_turn_last_speaker, "topic": prev_speaker_topic},
-                        "dense_cap_result": self.dense_cap_result}
+                data = {"experiment_id": experiment_id,
+                             "req_type": "reply",
+                             "openai_api_key": openai_api_key,
+                             "client_sentence": xml_string,
+                             "language": language,
+                             "due_intervention": self.due_intervention,
+                             "dialogue_state": self.dialogue_state.to_dict(),
+                             "dialogue_statistics": self.dialogue_statistics.to_dict(),
+                             "speakers_info": speakers_info_no_names,
+                             "prev_speaker_info": {"id": prev_turn_last_speaker, "topic": prev_speaker_topic},
+                             "visual_information": self.visual_information}
 
                 if self.due_intervention["type"] is None:
                     # Update the info about id and topic of previous speaker to the current one
@@ -649,7 +651,7 @@ class MyClass(GeneratedClass):
                 req1_thread.join()
                 if self.server_connection_lost:
                     self.logger.info("Connection with Hub lost")
-                    error_msg = "Mi dispiace, ho perso la connessione con il server. Come farebbe un esperto informatico, prova a riavviare l'applicazione e se il problema persiste contatta i miei sviluppatori."
+                    error_msg = "Mi dispiace, ho perso la connessione con il server. Prova a riavviare l'applicazione e se il problema persiste contatta i miei sviluppatori."
                     self.animated_speech.say(self.voice_speed + error_msg, self.configuration)
                     self.onInput_onStop()
 
@@ -694,7 +696,7 @@ class MyClass(GeneratedClass):
                 data["req_type"] = "continuation"
                 # self.logger.info(self.dialogue_state.to_dict())
                 data["dialogue_state"] = self.dialogue_state.to_dict()
-                data["dense_cap_result"] = self.dense_cap_result
+                data["visual_information"] = self.visual_information
                 # Empty the field of the due intervention as it has already been processed by the first request
                 # Create a thread that performs another request to get the continuation of the dialogue
                 req2_thread = threading.Thread(target=self.hub_request, args=(data,))
@@ -715,7 +717,7 @@ class MyClass(GeneratedClass):
                     req2_thread.join()
                 if self.server_connection_lost:
                     self.logger.info("Connection with Hub lost!")
-                    error_msg = "Mi dispiace, ho perso la connessione con il server. Come farebbe un esperto informatico, prova a riavviare l'applicazione e se il problema persiste contatta i miei sviluppatori."
+                    error_msg = "Mi dispiace, ho perso la connessione con il server. Prova a riavviare l'applicazione e se il problema persiste contatta i miei sviluppatori."
                     self.animated_speech.say(self.voice_speed + error_msg, self.configuration)
                     self.onInput_onStop()
 
