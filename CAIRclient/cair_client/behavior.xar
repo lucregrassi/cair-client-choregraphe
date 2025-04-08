@@ -60,6 +60,8 @@ from dotenv import load_dotenv
 
 server_port = "12345"
 
+# Inser the robot name
+robot_name = "NAO"
 # Insert here an identifier for the experiment to save logs in a separate file
 experiment_id = ""
 # Log client data on the raspberry
@@ -628,7 +630,8 @@ class MyClass(GeneratedClass):
                                                           "age": self.speakers_info[speaker_id]["age"]}
 
                 # Compose the payload of the message to be sent to the server
-                data = {"experiment_id": experiment_id,
+                data = {"robot_name": robot_name,
+                             "experiment_id": experiment_id,
                              "req_type": "reply",
                              "openai_api_key": openai_api_key,
                              "client_sentence": xml_string,
