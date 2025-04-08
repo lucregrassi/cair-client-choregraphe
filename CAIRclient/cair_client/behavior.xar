@@ -58,28 +58,34 @@ from cair_libraries.client_softbank_personalization_server import Personalizatio
 from requests.exceptions import ConnectionError
 from dotenv import load_dotenv
 
-server_port = "12349"
-img_port = "12348"
+server_port = "12345"
 
+# Insert here an identifier for the experiment to save logs in a separate file
 experiment_id = ""
-vision_grounding = False
+# Log client data on the raspberry
 log_data = True
+# Allow programmed interventions
 interventions = False
+# Save the conversation state to resume the dialogue even after the robot has been switched off
 resume_conversation_state = False
+# Use formal language (dare del lei)
 formal_language = False
+# Use vision information during the interaction
+vision_grounding = False
+img_port = "12348"
 
 lab_server = "130.251.2.192"
 local_server = "10.186.13.11"
-microphone_ip = "192.168.1.24"
+raspberry_ip = "192.168.1.24"
 
 # Set the location of the server
 server_ip = lab_server
 
 # Location of the external microphone
 # Raspberry 130.251.13.124 in the lab
-audio_recorder_ip = microphone_ip
-registration_ip = microphone_ip
-log_service_ip = microphone_ip
+audio_recorder_ip = raspberry_ip
+registration_ip = raspberry_ip
+log_service_ip = raspberry_ip
 
 language = "it-IT"
 
