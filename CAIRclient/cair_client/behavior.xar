@@ -58,10 +58,12 @@ from cair_libraries.client_softbank_personalization_server import Personalizatio
 from requests.exceptions import ConnectionError
 from dotenv import load_dotenv
 
-server_port = "12345"
+hub_port = "12345"
+log_port = "12350"
+vision_port = "12351"
 
 # Inser the robot name
-robot_name = "NAO"
+device_id = "NAO"
 # Insert here an identifier for the experiment to save logs in a separate file
 experiment_id = ""
 # Log client data on the raspberry
@@ -74,31 +76,29 @@ resume_conversation_state = False
 formal_language = False
 # Use vision information during the interaction
 vision_grounding = False
-img_port = "12348"
 
 lab_server = "130.251.2.192"
-local_server = "10.186.13.11"
+local_server = "10.186.13.63"
 raspberry_ip = "192.168.1.24"
 
 # Set the location of the server
 server_ip = lab_server
 
 # Location of the external microphone
-# Raspberry 130.251.13.124 in the lab
 audio_recorder_ip = raspberry_ip
 registration_ip = raspberry_ip
-log_service_ip = raspberry_ip
 
 language = "it-IT"
 
-robot_name = "ribe"
+pepper_image_name = ""
 
 MAX_HISTORY_TURNS = 10
 # Silence time in seconds after which we consider the conversation not ongoing
 SILENCE_THRESHOLD = 300
 
-BASE_CAIR_hub = "https://" + server_ip + ":" + server_port + "/CAIR_hub"
-img_url = "http://" + server_ip + ":" + img_port + "/CAIR_vision_grounding"
+BASE_CAIR_HUB_URL = "https://" + server_ip + ":" + hub_port + "/CAIR_hub"
+BASE_CAIR_LOG_URL = "https://" + server_ip + ":" + log_port + "/CAIR_log"
+BASE_CAIR_VISION_URL = "http://" + server_ip + ":" + vision_port + "/CAIR_vision"
 
 # If dense captioning is set to false the visual_information will be sent empty to the server and the
 # visual information will not be used by gpt-4
@@ -133,7 +133,7 @@ class MyClass(GeneratedClass):
             self.voice_speed = "\\RSPD=100\\"
 
         self.memory.insertData("CAIR/server_ip", server_ip)
-        self.memory.insertData("CAIR/server_port", server_port)
+        self.memory.insertData("CAIR/server_port", hub_port)
         self.memory.insertData("CAIR/registration_ip", registration_ip)
         # May be needed by the other behaviors but should be updated when it changes
         self.memory.insertData("CAIR/language", language)
@@ -223,42 +223,85 @@ class MyClass(GeneratedClass):
         self.vision_grounding = vision_grounding
         self.visual_information = visual_information
         self.microphone_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.log_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.log_data = log_data
+        if self.log_data:
+            try:
+                # Send a HEAD request or lightweight GET to the logging service
+                test_response = requests.head(BASE_CAIR_LOG_URL,  timeout=5, verify=self.certificate)
+                if test_response.status_code >= 400:
+                    raise requests.exceptions.RequestException("Non-success status code: " + str(test_response.status_code))
+            except Exception as e:
+                self.logger.info("Log service is not reachable: " + str(e))
+                error_msg = "Mi dispiace,  il servizio di registrazione dei log non è disponibile. Controlla che sia attivo e riprova."
+                self.animated_speech.say(self.voice_speed + error_msg, self.configuration)
+                self.onInput_onStop()
+
         self.microphone_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE,  1)
         self.microphone_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE,  5)
         self.microphone_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL,  1)
         self.microphone_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT,  5)
-        self.log_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE,  1)
-        self.log_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE,  1)
-        self.log_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL,  1)
-        self.log_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT,  5)
 
         self.due_intervention = {"type": None, "exclusive": False, "timestamp": None}
         self.past_due_interventions = []
 
-    def send_log_data(self, to_log):
-        if self.log_data:
-            try:
-                # Attempt to send data to the socket
-                self.log_socket.send(to_log.encode("utf-8"))
-            except socket.error as e:
-                # Handle the broken pipe error and other socket errors
-                if e.errno == 32:  # 32 is the errno for 'Broken pipe'
-                    self.logger.info("Warning: Broken pipe error occurred. The connection may have been closed.")
-                    # Optionally, handle the closed connection or attempt to reconnect
-                else:
-                    # Handle other socket errors
-                    self.logger.info("Socket error occurred: " + str(e))
-                to_say = "Mi dispiace, ho perso la connessione con il microfono esterno. Controlla che sia acceso o prova a riavviarlo, poi aspetta qualche minuto e poi riavvia anche la mia applicazione!"
-                self.animated_speech.say(self.voice_speed + to_say, self.configuration)
-                self.onInput_onStop()
-            except Exception as e:
-                # Catch any other unexpected exceptions
-                self.logger.info("An error occurred while sending log data: " + str(e))
-                to_say = "Mi dispiace, ho perso la connessione con il microfono esterno. Controlla che sia acceso o prova a riavviarlo, poi aspetta qualche minuto e poi riavvia anche la mia applicazione!"
-                self.animated_speech.say(self.voice_speed + to_say, self.configuration)
-                self.onInput_onStop()
+        self.dialogue_log_buffer = {}
+        self.vision_log_buffer = {}
+        self.audio_log_buffer = {}
+
+    def get_ontology_name_from_port(self):
+        return {
+            "12345": "generic",
+            "12346": "home paraplegia",
+            "12347": "maritime_station_pepper",
+            "12348": "maritime_station_alterego",
+            "12349": "delirium"
+        }.get(str(server_port), "unknown")
+
+
+    def accumulate_log(self, key, value, log_type="client_dialogue"):
+        """Accumulate logs into the correct buffer."""
+        if log_type == "client_dialogue":
+            self.dialogue_log_buffer[key] = value
+        elif log_type == "audio_recorder":
+            self.audio_log_buffer[key] = value
+        elif log_type == "client_vision":
+            self.vision_log_buffer[key] = value
+        else:
+            self.logger.info("Unknown log type: " + log_type)
+
+    def send_log_buffer(self, log_type="client_dialogue"):
+        """Send and clear the selected log buffer."""
+        if log_type == "client_dialogue" and self.dialogue_log_buffer:
+            self.send_log_data(self.dialogue_log_buffer, log_type)
+            self.dialogue_log_buffer.clear()
+        elif log_type == "audio_recorder" and self.audio_log_buffer:
+            self.send_log_data(self.audio_log_buffer, log_type)
+            self.audio_log_buffer.clear()
+        elif log_type == "client_vision" and self.vision_log_buffer:
+            self.send_log_data(self.vision_log_buffer, log_type)
+            self.vision_log_buffer.clear()
+
+    def send_log_data(self, to_log, log_type="client_dialogue"):
+        """Send a log entry immediately (only if logging is enabled)."""
+        if not self.log_data:
+            return
+        try:
+            payload = {
+                "device_id": device_id,
+                "experiment_id": experiment_id,
+                "ontology_name": self.get_ontology_name_from_port(),
+                "log_type": log_type,
+                "log": to_log,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+            headers = {"Content-Type": "application/json"}
+            response = requests.post(BASE_CAIR_LOG_URL, json=payload, headers=headers, verify=self.certificate, timeout=5)
+
+            if response.status_code != 200:
+                self.logger.info("Warning: log service returned non-OK status code: " + str(response.status_code))
+        except Exception as e:
+            self.logger.info("Error sending logs: " + str(e))
 
     def check_socket_connection(self, received_string):
         if received_string == "":
@@ -290,40 +333,35 @@ class MyClass(GeneratedClass):
             try:
                 # Log the time needed to perform the request and get the response
                 request_start_time = time.time()
-                response = requests.post(img_url, data=json_data, headers={"Content-Type":"application/json"})
-                self.visual_information = response.json()["result"]
+                response = requests.post(BASE_CAIR_VISION_URL, data=json_data, headers={"Content-Type":"application/json"})
                 request_end_time = time.time()
-                to_log = "v#timestamp:" + date_time_str + "\n" \
-                         "v#image_capture_time:" + str(image_capture_end_time - image_capture_start_time) + "\n" \
-                         "v#compressed_image_size_bytes:" + str(image_byte_size) + "\n" \
-                         "v#densecap_request_response_time:" + str(request_end_time - request_start_time) + "\n" \
-                         "v#********************\n"
-                self.send_log_data(to_log)
+                self.visual_information = response.json()["result"]
+                self.accumulate_log("timestamp", date_time_str, log_type="client_vision")
+                self.accumulate_log("image_capture_time", round(image_capture_end - image_capture_start, 3), log_type="client_vision")
+                self.accumulate_log("compressed_image_size_bytes", int(image_byte_size), log_type="client_vision")
+                self.accumulate_log("densecap_request_response_time", round(request_end - request_start, 3), log_type="client_vision")
+                self.send_log_buffer(log_type="client_vision")
+
             except ConnectionError:
                 self.logger.info("** The Dense Captioning service is not available")
 
     def say_filler_sentence(self):
         now = datetime.now()
         date_time_str = now.strftime("%Y-%m-%d %H:%M:%S")
-        to_log = "d#timestamp:" + date_time_str + "\n"
-        self.send_log_data(to_log)
+        self.accumulate_log("timestamp",  date_time_str)
         filler_sentence = random.choice(self.sentences[language])
         self.logger.info("FILLER: " + filler_sentence)
         # Log the time taken to say the random sentence
         start_time = time.time()
         self.animated_speech.say(self.voice_speed + filler_sentence, self.configuration)
         end_time = time.time()
-        to_log = "d#ack_sentence_speaking_time:" + str(end_time-start_time) + "\n"
-        self.send_log_data(to_log)
+        self.accumulate_log("filler_sentence_speaking_time",  round(end_time-start_time, 3))
 
-    def connect_to_audio_and_log_services(self):
+    def connect_to_audio_service(self):
         # Try connecting to the socket that records the audio
         self.logger.info("Trying to connect to the audio recorder socket.")
         try:
             self.microphone_socket.connect((audio_recorder_ip, 9090))
-            # the service to log data is on 9092 as on 9091 there is the registration service
-            if self.log_data:
-                self.log_socket.connect((audio_recorder_ip, 9092))
         except Exception as e:
             if language == "it-IT":
                 to_say = "Mi dispiace, non riesco a connettermi al microfono esterno.  Prova a farlo ripartire, e poi riavvia la mia applicazione. Se il problema persiste, contatta i miei sviluppatori."
@@ -397,7 +435,7 @@ class MyClass(GeneratedClass):
         compressed_data = zlib.compress(encoded_data)
         start_time = time.time()
         try:
-            hub_response = requests.post(BASE_CAIR_hub, data=compressed_data, verify=self.certificate)
+            hub_response = requests.post(BASE_CAIR_HUB_URL, data=compressed_data, verify=self.certificate)
         except Exception as e:
             self.logger.info("Something went wrong during hub request: " + str(e))
             self.server_connection_lost = True
@@ -419,8 +457,7 @@ class MyClass(GeneratedClass):
             self.dialogue_sentence = hub_response.json()['dialogue_sentence']
 
             if data["req_type"] == "reply":
-                to_log = "d#first_request_response_time:" + str(end_time - start_time) + "\n"
-                self.send_log_data(to_log)
+                self.accumulate_log("first_request_response_time", round(end_time - start_time, 3))
                 # self.print_used_nuances(self.dialogue_state.dialogue_nuances)
                 self.dialogue_statistics = DialogueStatistics(d=hub_response.json()["dialogue_statistics"])
                 # The hub updates the average topic distance matrix, hence it should be written on the file
@@ -431,8 +468,7 @@ class MyClass(GeneratedClass):
                 self.due_intervention = hub_response.json()["due_intervention"]
                 self.logger.info("Due intervention returned by Hub: " + json.dumps(self.due_intervention))
             else:
-                to_log = "d#second_request_response_time:" + str(end_time-start_time) + "\n"
-                self.send_log_data(to_log)
+                self.accumulate_log("second_request_response_time", round(end_time-start_time, 3))
         else:
             self.logger.info("No response received from the Hub!")
             self.server_connection_lost = True
@@ -441,9 +477,9 @@ class MyClass(GeneratedClass):
         global language
         ongoing_conversation = True
 
-        # With Pepper robot, preload the images to be set on the tablet during the conversation
+        # With Pepper robot,  preload the images to be set on the tablet during the conversation
         if self.tablet:
-            img_path = "http://" + self.tablet_service.robotIp() + "/apps/" + app_name + "/img/RICE_" + robot_name + ".png"
+            img_path = "http://" + self.tablet_service.robotIp() + "/apps/" + app_name + "/img/RICE_" + pepper_image_name + ".png"
             self.logger.info("Setting tablet image from path: " + img_path)
             self.tablet_service.preLoadImage(img_path)
             self.tablet_service.showImage(img_path)
@@ -452,7 +488,7 @@ class MyClass(GeneratedClass):
             self.logger.info("Starting personalization server in thread")
             self.personalization_server.start_server_in_thread()
 
-        self.connect_to_audio_and_log_services()
+        self.connect_to_audio_service()
         self.initialize_user_session()
         self.load_conversation_state()
 
@@ -521,8 +557,24 @@ class MyClass(GeneratedClass):
 
             if self.due_intervention["type"] is None:
                 # The second string received should be the xml client sentence
-                xml_string = self.microphone_socket.recv(1024).decode('utf-8')
-                self.check_socket_connection(xml_string)
+                payload = self.microphone_socket.recv(4096).decode('utf-8')
+                self.check_socket_connection(payload)
+
+                try:
+                    payload_json = json.loads(payload)
+                    xml_string = payload_json["transcription"]
+                    audio_logs = payload_json["logs"]
+
+                    # Send logs to the server
+                    for key, value in audio_logs.items():
+                        self.accumulate_log(key, value, log_type="audio_recorder")
+                    self.send_log_buffer(log_type="audio_recorder")
+
+                except Exception as e:
+                    self.logger.info("Error parsing payload from microphone: " + str(e))
+                    error_msg = "C'è stato qualche problema nella ricezione dei dati dal microfono esterno."
+                    self.animated_speech.say(self.voice_speed + error_msg, self.configuration)
+                    self.onInput_onStop()
 
                 # Do not proceed until the xml string is complete and all tags are closed
                 proceed = False
@@ -630,7 +682,7 @@ class MyClass(GeneratedClass):
                                                           "age": self.speakers_info[speaker_id]["age"]}
 
                 # Compose the payload of the message to be sent to the server
-                data = {"robot_name": robot_name,
+                data = {"device_id": device_id,
                              "experiment_id": experiment_id,
                              "req_type": "reply",
                              "openai_api_key": openai_api_key,
@@ -719,8 +771,7 @@ class MyClass(GeneratedClass):
                     end_time = time.time()
                     # os.system("afplay audio.mp3")
                     # stream_and_play(dialogue_sentence1_str)
-                    to_log = "d#first_response_speaking_time:" + str(end_time - start_time) + "\n"
-                    self.send_log_data(to_log)
+                    self.accumulate_log("first_response_speaking_time",  round(end_time - start_time, 3))
 
                 if req2_thread.is_alive():
                     req2_thread.join()
@@ -745,9 +796,8 @@ class MyClass(GeneratedClass):
                     end_time = time.time()
                     # os.system("afplay audio.mp3")
                     # stream_and_play(dialogue_sentence2_str)
-                    to_log = "d#second_sentence_speaking_time:" + str(end_time - start_time) + "\n" \
-                             "d#********************\n"
-                    self.send_log_data(to_log)
+                    self.accumulate_log("second_sentence_speaking_time", round(end_time - start_time, 3))
+                    self.send_log_buffer(log_type="client_dialogue")
 
                     # Replace the last assistant reply with the complete one
                     self.dialogue_state.conversation_history.pop()
