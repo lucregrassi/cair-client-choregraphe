@@ -34,7 +34,6 @@ sys.path.append(app_folder)
 
 import qi
 import naoqi
-import datetime
 import xml.etree.ElementTree as ET
 import threading
 import requests
@@ -46,6 +45,7 @@ import json
 import time
 import xml
 import re
+import os
 import signal
 from naoqi import ALProxy
 from datetime import datetime
@@ -79,7 +79,7 @@ vision_grounding = False
 
 lab_server = "130.251.2.192"
 local_server = "10.186.13.63"
-raspberry_ip = "192.168.1.24"
+raspberry_ip = "192.168.1.13"
 
 # Set the location of the server
 server_ip = lab_server
@@ -255,7 +255,7 @@ class MyClass(GeneratedClass):
             "12347": "maritime_station_pepper",
             "12348": "maritime_station_alterego",
             "12349": "delirium"
-        }.get(str(server_port), "unknown")
+        }.get(str(hub_port), "unknown")
 
 
     def accumulate_log(self, key, value, log_type="client_dialogue"):
@@ -314,9 +314,6 @@ class MyClass(GeneratedClass):
 
     def acquire_image(self):
         while self.isAlive:
-            # now = datetime.now() + timedelta(hours=1)
-            now = datetime.now()
-            date_time_str = now.strftime("%Y-%m-%d %H:%M:%S")
             # Capture an image an take the time
             image_capture_start_time = time.time()
             self.photoCaptureProxy.takePictures(1, "/home/nao/recordings/cameras/", "camera_image", True)
@@ -336,7 +333,7 @@ class MyClass(GeneratedClass):
                 response = requests.post(BASE_CAIR_VISION_URL, data=json_data, headers={"Content-Type":"application/json"})
                 request_end_time = time.time()
                 self.visual_information = response.json()["result"]
-                self.accumulate_log("timestamp", date_time_str, log_type="client_vision")
+                self.accumulate_log("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), log_type="client_vision")
                 self.accumulate_log("image_capture_time", round(image_capture_end - image_capture_start, 3), log_type="client_vision")
                 self.accumulate_log("compressed_image_size_bytes", int(image_byte_size), log_type="client_vision")
                 self.accumulate_log("densecap_request_response_time", round(request_end - request_start, 3), log_type="client_vision")
@@ -346,9 +343,7 @@ class MyClass(GeneratedClass):
                 self.logger.info("** The Dense Captioning service is not available")
 
     def say_filler_sentence(self):
-        now = datetime.now()
-        date_time_str = now.strftime("%Y-%m-%d %H:%M:%S")
-        self.accumulate_log("timestamp",  date_time_str)
+        self.accumulate_log("timestamp",  datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         filler_sentence = random.choice(self.sentences[language])
         self.logger.info("FILLER: " + filler_sentence)
         # Log the time taken to say the random sentence
@@ -435,7 +430,11 @@ class MyClass(GeneratedClass):
         compressed_data = zlib.compress(encoded_data)
         start_time = time.time()
         try:
-            hub_response = requests.post(BASE_CAIR_HUB_URL, data=compressed_data, verify=self.certificate)
+            hub_response = requests.post(BASE_CAIR_HUB_URL, data=compressed_data, verify=self.certificate, timeout=10)
+        except requests.exceptions.Timeout:
+            self.logger.info("Hub request timed out after 10 seconds")
+            self.server_connection_lost = True
+            return
         except Exception as e:
             self.logger.info("Something went wrong during hub request: " + str(e))
             self.server_connection_lost = True
@@ -549,7 +548,12 @@ class MyClass(GeneratedClass):
                 # If the received string is timeout it means that the user remained in silence for some time
                 if received_str == "timeout":
                     self.logger.info("** Received timeout from microphone **")
+                    # build and send a timeout log entry
+                    self.accumulate_log("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S"),  log_type="audio_recorder")
+                    self.accumulate_log("error_message", "TIMEOUT",  log_type="audio_recorder")
+                    self.send_log_buffer(log_type="audio_recorder")
                     continue
+                self.logger.info("sending ack to microphone")
                 self.microphone_socket.send("ack".encode("utf-8"))
                 if time.time() - last_active_speaker_time <= SILENCE_THRESHOLD:
                     ongoing_conversation = True
@@ -562,7 +566,7 @@ class MyClass(GeneratedClass):
 
                 try:
                     payload_json = json.loads(payload)
-                    xml_string = payload_json["transcription"]
+                    xml_string = payload_json["xml"]
                     audio_logs = payload_json["logs"]
 
                     # Send logs to the server
@@ -594,6 +598,9 @@ class MyClass(GeneratedClass):
                     json.dump({"past_due_interventions": self.past_due_interventions}, intervention_log_file, ensure_ascii=False, indent=4)
                     intervention_log_file.write('\n')
 
+                self.accumulate_log("timestamp",  datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                self.accumulate_log("intervention_type", self.due_intervention["type"])
+                self.accumulate_log("intervention_sentence", self.due_intervention["sentence"])
                 # If there is a due intervention, create the xml string with the sentence of the intervention
                 xml_string = ('<response><profile_id value="' + self.dialogue_statistics.mapping_index_speaker[int(0)] +
                               '">' + self.due_intervention["sentence"] + '<language>' + language +
@@ -816,6 +823,9 @@ class MyClass(GeneratedClass):
                         repeat_continuation = map_language_sentence[language] + self.dialogue_state.prev_dialogue_sentence[-1][1]
                         self.logger.info("REPEAT CONTINUATION: " + str(repeat_continuation))
                         self.animated_speech.say(self.voice_speed + str(repeat_continuation), self.configuration)
+                        self.send_log_buffer(log_type="client_dialogue")
+                    else:
+                        self.send_log_buffer(log_type="client_dialogue")
 
     def onInput_onStop(self):
         self.logger.info("Stopping application...")
