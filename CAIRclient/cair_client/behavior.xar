@@ -58,14 +58,14 @@ from cair_libraries.client_softbank_personalization_server import Personalizatio
 from requests.exceptions import ConnectionError
 from dotenv import load_dotenv
 
-hub_port = "12345"
+hub_port = "12346"
 log_port = "12350"
 vision_port = "12351"
 
 # Inser the robot name
 device_id = "NAO"
 # Insert here an identifier for the experiment to save logs in a separate file
-experiment_id = ""
+experiment_id = "exp4"
 # Log client data on the raspberry
 log_data = True
 # Allow programmed interventions
@@ -79,7 +79,7 @@ vision_grounding = False
 
 lab_server = "130.251.2.192"
 local_server = "10.186.13.63"
-raspberry_ip = "192.168.1.13"
+raspberry_ip = "192.168.1.24"
 
 # Set the location of the server
 server_ip = lab_server
@@ -132,12 +132,12 @@ class MyClass(GeneratedClass):
             self.memory.insertData("CAIR/voice_speed", 100)
             self.voice_speed = "\\RSPD=100\\"
 
-        self.memory.insertData("CAIR/server_ip", server_ip)
-        self.memory.insertData("CAIR/server_port", hub_port)
-        self.memory.insertData("CAIR/registration_ip", registration_ip)
+        self.memory.insertData("CAIR/server_ip", str(server_ip))
+        self.memory.insertData("CAIR/server_port", str(hub_port))
+        self.memory.insertData("CAIR/registration_ip", str(registration_ip))
         # May be needed by the other behaviors but should be updated when it changes
-        self.memory.insertData("CAIR/language", language)
-        self.memory.insertData("CAIR/app_name", app_name)
+        self.memory.insertData("CAIR/language", str(language))
+        self.memory.insertData("CAIR/app_name", str(app_name))
 
         # Instances of the classes in the libs folder
         self.certificate = "/data/home/nao/.local/share/PackageManager/apps/" + app_name + "/certificates/server_" + server_ip.replace(".", "_") + ".crt"
@@ -192,7 +192,7 @@ class MyClass(GeneratedClass):
             self.tablet = False
 
         self.audio_device = ALProxy("ALAudioDevice")
-        self.audio_device.setOutputVolume(30)
+        self.audio_device.setOutputVolume(60)
 
         self.photoCaptureProxy = ALProxy("ALPhotoCapture", "127.0.0.1", 9559)
         self.photoCaptureProxy.setResolution(2)
@@ -633,7 +633,7 @@ class MyClass(GeneratedClass):
 
             # Initialize and start the thread that says something to fill the void while waiting
             filler_sentence_thread = threading.Thread(None, self.say_filler_sentence, args=())
-            if self.due_intervention["type"] is None:
+            if self.due_intervention["type"] is None and self.isAlive:
                 filler_sentence_thread.start()
 
             sentence = sentence.replace(".", "")
