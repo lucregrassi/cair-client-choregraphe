@@ -79,7 +79,7 @@ vision_grounding = False
 
 lab_server = "130.251.2.192"
 local_server = "10.186.13.63"
-raspberry_ip = "192.168.1.35"
+raspberry_ip = "192.168.1.38"
 
 # Set the location of the server
 server_ip = lab_server
