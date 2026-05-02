@@ -9,8 +9,8 @@
     },
     "values": {
         "diversity": ["any", "good mental health", "the person is on a wheelchair and is paraplegic"],
-        "time": ["during the day", "autumn", "end of November/beginning of December"],
-        "place": ["Umberto's home", "Savona", "Italy"],
+        "time": ["during the day", "spring", "May"],
+        "place": ["home", "Chiàvari", "Italy"],
         "tone": ["humorous", "kind", "dramatic", "controversial", "aggressive", "teasing", "alarmist",
                  "worried", "neutral"],
         "positive_speech_act": ["assertive", "commissive", "expressive"],

@@ -19,7 +19,7 @@
               <bitmap>media/images/box/box-python-script.png</bitmap>
               <script language="4">
                 <content>
-                  <![CDATA[#!usr/bin/python -tt
+                  <![CDATA[#!/usr/bin/python -tt
 # -*- coding: utf-8 -*-
 
 import sys
@@ -65,7 +65,7 @@ vision_port = "12351"
 # Inser the robot name
 device_id = "NAO"
 # Insert here an identifier for the experiment to save logs in a separate file
-experiment_id = "exp4"
+experiment_id = "exp6"
 # Log client data on the raspberry
 log_data = True
 # Allow programmed interventions
@@ -79,7 +79,7 @@ vision_grounding = False
 
 lab_server = "130.251.2.192"
 local_server = "10.186.13.63"
-raspberry_ip = "192.168.1.24"
+raspberry_ip = "192.168.1.35"
 
 # Set the location of the server
 server_ip = lab_server
@@ -312,6 +312,17 @@ class MyClass(GeneratedClass):
             self.animated_speech.say(self.voice_speed + to_say, self.configuration)
             self.onInput_onStop()
 
+    def recv_until_newline(self, connection):
+        chunks = []
+        while True:
+            chunk = connection.recv(4096)
+            if chunk == "":
+                return ""
+            chunks.append(chunk)
+            data = "".join(chunks)
+            if "\n" in data:
+                return data.split("\n", 1)[0]
+
     def acquire_image(self):
         while self.isAlive:
             # Capture an image an take the time
@@ -334,7 +345,7 @@ class MyClass(GeneratedClass):
                 request_end_time = time.time()
                 self.visual_information = response.json()["result"]
                 self.accumulate_log("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), log_type="client_vision")
-                self.accumulate_log("image_capture_time", round(image_capture_end - image_capture_start, 3), log_type="client_vision")
+                self.accumulate_log("image_capture_time", round(image_capture_end_time - image_capture_start_time, 3), log_type="client_vision")
                 self.accumulate_log("compressed_image_size_bytes", int(image_byte_size), log_type="client_vision")
                 self.accumulate_log("densecap_request_response_time", round(request_end - request_start, 3), log_type="client_vision")
                 self.send_log_buffer(log_type="client_vision")
@@ -534,7 +545,7 @@ class MyClass(GeneratedClass):
             if self.due_intervention["type"] is None:
                 self.logger.info("** Listening **")
                 # Tell the audio recorder that the client is ready to receive the user reply
-                self.microphone_socket.send(self.dialogue_state.sentence_type.encode("utf-8"))
+                self.microphone_socket.sendall(self.dialogue_state.sentence_type.encode("utf-8"))
                 # The first string received can be an ack that the user has finished talking (after 2s) or a timeout
                 try:
                     received_str = self.microphone_socket.recv(1024).decode('utf-8')
@@ -554,14 +565,14 @@ class MyClass(GeneratedClass):
                     self.send_log_buffer(log_type="audio_recorder")
                     continue
                 self.logger.info("sending ack to microphone")
-                self.microphone_socket.send("ack".encode("utf-8"))
+                self.microphone_socket.sendall("ack".encode("utf-8"))
                 if time.time() - last_active_speaker_time <= SILENCE_THRESHOLD:
                     ongoing_conversation = True
                 last_active_speaker_time = time.time()
 
             if self.due_intervention["type"] is None:
                 # The second string received should be the xml client sentence
-                payload = self.microphone_socket.recv(4096).decode('utf-8')
+                payload = self.recv_until_newline(self.microphone_socket)
                 self.check_socket_connection(payload)
 
                 try:
@@ -581,15 +592,13 @@ class MyClass(GeneratedClass):
                     self.onInput_onStop()
 
                 # Do not proceed until the xml string is complete and all tags are closed
-                proceed = False
-                while not proceed:
-                    try:
-                        ET.ElementTree(ET.fromstring(xml_string))
-                        proceed = True
-                    except xml.etree.ElementTree.ParseError:
-                        # If the xml is not complete, read again from the socket
-                        self.logger.info("The XML is not complete.")
-                        xml_string = xml_string + self.microphone_socket.recv(1024).decode('utf-8')
+                try:
+                    ET.ElementTree(ET.fromstring(xml_string))
+                except xml.etree.ElementTree.ParseError as e:
+                    self.logger.info("Error parsing XML from microphone: " + str(e))
+                    error_msg = "C'è stato qualche problema nella lettura del testo ricevuto dal microfono esterno."
+                    self.animated_speech.say(self.voice_speed + error_msg, self.configuration)
+                    self.onInput_onStop()
             else:
                 # Log the information regarding to the intervention
                 self.due_intervention["delay"] = time.time() - self.due_intervention["timestamp"]
