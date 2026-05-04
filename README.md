@@ -1,10 +1,9 @@
 # CAIR client for Nao and Pepper
-This repository contains the CAIR applications, available for the SoftBank robots Pepper and Nao.
+This repository contains the CAIR applications, available for the SoftBank robots Pepper and NAO.
 
-If you want to use the internal microphone of the robots you have to install the ASR2 application as a first thing. 
-Otherwise, you can connect through a socket to an external microphone of your choice.
+To use the applications, you can connect through a socket to an external microphone of your choice.
 
-To interact with the CAIR system, open the CAIRclient_multiparty application folder in Choregraphe, deploy it on the robot, and launch it using one of the following trigger sentences:
+To interact with the CAIR system, open the CAIRclient application folder in Choregraphe, deploy it on the robot, and launch it using one of the following trigger sentences:
 
 * Let's talk
 * Talk with me
@@ -14,7 +13,7 @@ Please note that the other versions of the CAIRclient application are for resear
 
 Once started, the application allows interaction with the CAIR Cloud.
 
-To stop the application you can say one of these sentences:
+To stop the application, you can say one of these sentences:
 
 * Stop talking
 * Quit the application
