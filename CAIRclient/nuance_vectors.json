@@ -10,9 +10,9 @@
     "values": {
         "diversity": ["any", "good mental health", "the person is on a wheelchair and is paraplegic"],
         "time": ["during the day", "spring", "May"],
-        "place": ["home", "Chiàvari", "Italy"],
-        "tone": ["humorous", "kind", "dramatic", "controversial", "aggressive", "teasing", "alarmist",
-                 "worried", "neutral"],
+        "place": ["home", "Varazze", "Italy"],
+        "tone": ["humorous", "kind", "witty", "cute", "comforting", "funny", "kind",
+                 "cute", "neutral"],
         "positive_speech_act": ["assertive", "commissive", "expressive"],
         "contextual_speech_act": ["assertive", "commissive", "expressive", "declarative"]
     }

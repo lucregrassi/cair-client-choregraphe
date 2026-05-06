@@ -66,6 +66,9 @@ vision_port = "12351"
 device_id = "NAO"
 # Insert here an identifier for the experiment to save logs in a separate file
 experiment_id = "exp6"
+# Set speaker gender for when the robot is talking with one person!
+speaker_gender = "f"
+
 # Log client data on the raspberry
 log_data = True
 # Allow programmed interventions
@@ -79,7 +82,7 @@ vision_grounding = False
 
 lab_server = "130.251.2.192"
 local_server = "10.186.13.63"
-raspberry_ip = "192.168.1.38"
+raspberry_ip = "192.168.1.148"
 
 # Set the location of the server
 server_ip = lab_server
@@ -694,8 +697,8 @@ class MyClass(GeneratedClass):
                 # This is needed by OpenAI as it should know the gender.
                 speakers_info_no_names = {}
                 for speaker_id in self.speakers_info:
-                    speakers_info_no_names[speaker_id] = {"gender": self.speakers_info[speaker_id]["gender"],
-                                                          "age": self.speakers_info[speaker_id]["age"]}
+                    #speakers_info_no_names[speaker_id] = {"gender": self.speakers_info[speaker_id]["gender"],  "age": self.speakers_info[speaker_id]["age"]}
+                    speakers_info_no_names[speaker_id] = {"gender": speaker_gender,  "age": self.speakers_info[speaker_id]["age"]}
 
                 # Compose the payload of the message to be sent to the server
                 data = {"device_id": device_id,
